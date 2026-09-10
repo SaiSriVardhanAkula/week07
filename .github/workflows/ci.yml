@@ -6,13 +6,85 @@ on:
     branches:
       - main
 
+
 jobs:
 
   # =========================================================
   # Backend Tests
   # =========================================================
   backend-test:
-    # KEEP YOUR EXISTING 7.1P BACKEND TEST CONFIGURATION HERE
+    name: Test ${{ matrix.service }}
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+
+      matrix:
+        include:
+          - service: user-service
+            database: users
+            port: 5433
+
+          - service: student-service
+            database: students
+            port: 5434
+
+          - service: lecturer-service
+            database: lecturers
+            port: 5435
+
+          - service: course-service
+            database: courses
+            port: 5436
+
+          - service: enrollment-service
+            database: enrollments
+            port: 5437
+
+    services:
+      postgres:
+        image: postgres:16
+
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ${{ matrix.database }}
+
+        ports:
+          - ${{ matrix.port }}:5432
+
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    steps:
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install backend dependencies
+        working-directory: ./${{ matrix.service }}
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run backend tests
+        working-directory: ./${{ matrix.service }}
+        env:
+          DB_HOST: localhost
+          DB_PORT: ${{ matrix.port }}
+          DB_NAME: ${{ matrix.database }}
+          DB_USER: postgres
+          DB_PASSWORD: postgres
+        run: |
+          pytest
 
 
   # =========================================================
@@ -30,23 +102,26 @@ jobs:
       VITE_ENROLLMENT_SERVICE_URL: http://localhost:8005
 
     steps:
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: "22"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
       - name: Install frontend dependencies
         working-directory: ./frontend
-        run: npm ci
+        run: |
+          npm ci
 
       - name: Run frontend tests
         working-directory: ./frontend
-        run: npx vitest run
+        run: |
+          npx vitest run
 
 
   # =========================================================
@@ -56,10 +131,12 @@ jobs:
     name: Build and Push ${{ matrix.image }}
     runs-on: ubuntu-latest
 
+    # Both backend and frontend tests must pass first
     needs:
       - backend-test
       - frontend-test
 
+    # Build and push only for main branch pushes or manual runs
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
 
     strategy:
@@ -67,6 +144,7 @@ jobs:
 
       matrix:
         include:
+
           - service: frontend
             image: koalatech-frontend
 
@@ -86,6 +164,7 @@ jobs:
             image: koalatech-enrollment-service
 
     steps:
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
